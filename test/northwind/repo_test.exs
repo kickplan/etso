@@ -199,6 +199,28 @@ defmodule Northwind.RepoTest do
     refute [] == Repo.all(Model.Employee)
   end
 
+  test "Aggregate `count`" do
+    count =
+      Model.Employee
+      |> select([e], count(e.employee_id))
+      |> Repo.one
+
+    assert count ==
+      Model.Employee
+      |> Repo.all
+      |> length
+  end
+
+  test "Aggregate `count` with query" do
+    count =
+      Model.Employee
+      |> where([e], e.metadata["twitter"] == "@andrew_fuller")
+      |> select([e], count(e.employee_id))
+      |> Repo.one
+
+    assert count == 1
+  end
+
   describe "With JSON Extract Paths" do
     test "using literal value" do
       Model.Employee

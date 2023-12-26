@@ -8,7 +8,13 @@ defmodule Etso.Adapter.Behaviour.Queryable do
 
   @impl Ecto.Adapter.Queryable
   def prepare(:all, %Ecto.Query{} = query) do
-    {:nocache, {:select, query}}
+    case query.select.expr do
+      {:count, _, _} ->
+        {:nocache, {:select_count, query}}
+
+      _ ->
+        {:nocache, {:select, query}}
+    end
   end
 
   @impl Ecto.Adapter.Queryable
@@ -29,6 +35,15 @@ defmodule Etso.Adapter.Behaviour.Queryable do
     ets_objects = :ets.select(ets_table, [ets_match])
     ets_count = length(ets_objects)
     {ets_count, ObjectsSorter.sort(ets_objects, query)}
+  end
+
+  @impl Ecto.Adapter.Queryable
+  def execute(%{repo: repo}, _, {:nocache, {:select_count, query}}, params, _) do
+    {_, schema} = query.from.source
+    {:ok, ets_table} = TableRegistry.get_table(repo, schema)
+    ets_match = MatchSpecification.build(query, params)
+    ets_count = :ets.select_count(ets_table, [ets_match])
+    {1, [[ets_count]]}
   end
 
   @impl Ecto.Adapter.Queryable

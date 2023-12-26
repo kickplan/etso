@@ -80,6 +80,10 @@ defmodule Etso.ETS.MatchSpecification do
     []
   end
 
+  defp build_body(_, %Ecto.Query{select: %{fields: [{:count, _, _}]}}) do
+    true
+  end
+
   defp build_body(field_names, %Ecto.Query{select: %{fields: fields}}) do
     for field <- fields do
       resolve_field_target(field_names, field)
