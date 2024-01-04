@@ -21,6 +21,66 @@ defmodule Northwind.RepoTest do
     Repo.delete(employee)
   end
 
+  describe "inserts with :on_conflict" do
+    setup do
+      changes = %{first_name: "John", last_name: "Smith", employee_id: 300}
+      changeset = Model.Employee.changeset(changes)
+      Repo.insert(changeset)
+
+      changes = %{first_name: "Peter", last_name: "Wyatt", employee_id: 300}
+      [changeset: Model.Employee.changeset(changes)]
+    end
+
+    test "`:raise`", %{changeset: changeset} do
+      assert_raise Ecto.ConstraintError, fn ->
+        Repo.insert(changeset, on_conflict: :raise)
+      end
+
+      %{first_name: "John", last_name: "Smith"} = Repo.get(Model.Employee, 300)
+    end
+
+    test "`:nothing`", %{changeset: changeset} do
+      {:ok, _} = Repo.insert(changeset, on_conflict: :nothing, conflict_target: :employee_id)
+      %{first_name: "John", last_name: "Smith"} = Repo.get(Model.Employee, 300)
+    end
+
+    test "`:replace_all`", %{changeset: changeset} do
+      {:ok, _} = Repo.insert(changeset, on_conflict: :replace_all, conflict_target: :employee_id)
+      %{first_name: "Peter", last_name: "Wyatt"} = Repo.get(Model.Employee, 300)
+    end
+
+    test "`{:replace, fields}`", %{changeset: changeset} do
+      {:ok, _} =
+        Repo.insert(changeset,
+          on_conflict: {:replace, [:first_name]},
+          conflict_target: :employee_id
+        )
+
+      %{first_name: "Peter", last_name: "Smith"} = Repo.get(Model.Employee, 300)
+    end
+
+    test "`{:replace_all_except, fields}`", %{changeset: changeset} do
+      {:ok, _} =
+        Repo.insert(changeset,
+          on_conflict: {:replace_all_except, [:first_name]},
+          conflict_target: :employee_id
+        )
+
+      %{first_name: "John", last_name: "Wyatt"} = Repo.get(Model.Employee, 300)
+    end
+
+    test "`Ecto.Query`", %{changeset: changeset} do
+      assert_raise ArgumentError, fn ->
+        Repo.insert(changeset,
+          on_conflict: [set: [first_name: "Peter"]],
+          conflict_target: :employee_id
+        )
+      end
+
+      %{first_name: "John", last_name: "Smith"} = Repo.get(Model.Employee, 300)
+    end
+  end
+
   test "Insert Employees" do
     changes = [%{first_name: "Fred", employee_id: 100}, %{first_name: "Steven", employee_id: 200}]
     nil = Repo.get(Model.Employee, 100)
@@ -203,12 +263,12 @@ defmodule Northwind.RepoTest do
     count =
       Model.Employee
       |> select([e], count(e.employee_id))
-      |> Repo.one
+      |> Repo.one()
 
     assert count ==
-      Model.Employee
-      |> Repo.all
-      |> length
+             Model.Employee
+             |> Repo.all()
+             |> length
   end
 
   test "Aggregate `count` with query" do
@@ -216,7 +276,7 @@ defmodule Northwind.RepoTest do
       Model.Employee
       |> where([e], e.metadata["twitter"] == "@andrew_fuller")
       |> select([e], count(e.employee_id))
-      |> Repo.one
+      |> Repo.one()
 
     assert count == 1
   end

@@ -2,8 +2,8 @@ defmodule Etso.Adapter.Behaviour.Schema do
   @moduledoc false
   @behaviour Ecto.Adapter.Schema
 
-  alias Etso.Adapter.TableRegistry
-  alias Etso.ETS.TableStructure
+  alias Etso.ETS
+  alias Etso.ETS.Table
 
   @impl Ecto.Adapter.Schema
   def autogenerate(:id), do: :erlang.unique_integer()
@@ -12,48 +12,72 @@ defmodule Etso.Adapter.Behaviour.Schema do
 
   @impl Ecto.Adapter.Schema
   def insert_all(%{repo: repo}, %{schema: schema}, _, entries, _, _, _, _) do
-    {:ok, ets_table} = TableRegistry.get_table(repo, schema)
-    ets_field_names = TableStructure.field_names(schema)
-    ets_changes = TableStructure.entries_to_tuples(ets_field_names, entries)
-    ets_result = :ets.insert_new(ets_table, ets_changes)
-    if ets_result, do: {length(ets_changes), nil}, else: {0, nil}
+    table = Table.build(repo, schema)
+    result = ETS.insert_all(table, entries)
+
+    case result do
+      :ok -> {length(entries), []}
+      :error -> {0, nil}
+    end
   end
 
   @impl Ecto.Adapter.Schema
-  def insert(%{repo: repo}, %{schema: schema}, fields, _, _, _) do
-    {:ok, ets_table} = TableRegistry.get_table(repo, schema)
-    ets_field_names = TableStructure.field_names(schema)
-    ets_changes = TableStructure.fields_to_tuple(ets_field_names, fields)
-    ets_result = :ets.insert_new(ets_table, ets_changes)
-    if ets_result, do: {:ok, []}, else: {:invalid, [unique: "primary_key"]}
+  def insert(%{repo: repo}, %{schema: schema}, fields, on_conflict, _, _) do
+    table = Table.build(repo, schema)
+    result = ETS.insert(table, fields)
+
+    case result do
+      :ok -> {:ok, []}
+      :error -> handle_conflict(table, fields, on_conflict)
+    end
   end
 
   @impl Ecto.Adapter.Schema
   def update(%{repo: repo}, %{schema: schema}, fields, filters, [], _) do
-    {:ok, ets_table} = TableRegistry.get_table(repo, schema)
-    [key_name] = schema.__schema__(:primary_key)
-    [{^key_name, key}] = filters
-    ets_updates = build_ets_updates(schema, fields)
-    ets_result = :ets.update_element(ets_table, key, ets_updates)
-    if ets_result, do: {:ok, []}, else: {:error, :stale}
+    table = Table.build(repo, schema)
+    key = Keyword.fetch!(filters, table.primary_key)
+    result = ETS.update(table, key, fields)
+
+    case result do
+      :ok -> {:ok, []}
+      :error -> {:error, :stale}
+    end
   end
 
   @impl Ecto.Adapter.Schema
   def delete(%{repo: repo}, %{schema: schema}, filters, _, _) do
-    {:ok, ets_table} = TableRegistry.get_table(repo, schema)
-    [key_name] = schema.__schema__(:primary_key)
-    [{^key_name, key}] = filters
-    :ets.delete(ets_table, key)
+    table = Table.build(repo, schema)
+    key = Keyword.fetch!(filters, table.primary_key)
+    ETS.delete(table, key)
+
     {:ok, []}
   end
 
-  defp build_ets_updates(schema, fields) do
-    ets_field_names = TableStructure.field_names(schema)
+  defp handle_conflict(_table, _fields, {:raise, _, _}) do
+    {:invalid, [unique: "primary_key"]}
+  end
 
-    for {field_name, field_value} <- fields do
-      position_fun = fn x -> x == field_name end
-      position = 1 + Enum.find_index(ets_field_names, position_fun)
-      {position, field_value}
+  defp handle_conflict(_table, _fields, {:nothing, _, _}) do
+    {:ok, []}
+  end
+
+  defp handle_conflict(_table, _fields, {%Ecto.Query{}, _, _}) do
+    raise ArgumentError,
+          "queries cannot be used to handle insert conflicts for ets tables"
+  end
+
+  defp handle_conflict(table, fields, {replace, _, [target]}) do
+    unless target == table.primary_key do
+      raise ArgumentError, "invalid field `#{inspect(target)}` in :conflict_target"
+    end
+
+    {key, fields} = Keyword.pop(fields, table.primary_key)
+    {fields, _} = Keyword.split(fields, replace)
+    result = ETS.update(table, key, fields)
+
+    case result do
+      :ok -> {:ok, []}
+      :error -> {:error, :stale}
     end
   end
 end

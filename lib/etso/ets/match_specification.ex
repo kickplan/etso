@@ -5,7 +5,7 @@ defmodule Etso.ETS.MatchSpecification do
   execute the given queries with ETS with as much pushed down to ETS as possible.
 
   The basic shape of the match head is `[$1, $2, $3, …]` where each field is a named variable, the
-  ordering of the fields is determined by `Etso.ETS.TableStructure`.
+  ordering of the fields is determined by `Etso.ETS.Table`.
 
   Conditions are compiled according to the wheres in the underlying Ecto query, while the body is
   compiled based on the selected fields in the underlying Ecto query.
@@ -13,7 +13,7 @@ defmodule Etso.ETS.MatchSpecification do
 
   def build(query, params) do
     {_, schema} = query.from.source
-    field_names = Etso.ETS.TableStructure.field_names(schema)
+    field_names = Etso.ETS.Table.field_names(schema)
     match_head = build_head(field_names)
     match_conditions = build_conditions(field_names, params, query)
     match_body = [build_body(field_names, query)]
